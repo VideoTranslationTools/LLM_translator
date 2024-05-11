@@ -137,12 +137,14 @@ def translate(content: str):
     # API 端点
     # url = "http://192.168.8.135:11434/api/generate"
     url = "http://localhost:11434/api/chat"
+    # url = "http://localhost:11434/api/generate"
     # url = "http://192.168.8.135:11434/api/chat"
     # 要发送的 JSON 数据
     data = {
         "model": model,
         "stream": False,
         # "prompt": content,
+        "format": "json",
         "messages": [
             # {
             #     "role": "system",
@@ -168,15 +170,21 @@ def translate(content: str):
         }
     }
 
+    # 统计耗时
+    import time
+    start_time = time.time()
     # 发送 POST 请求
     response = requests.post(url, json=data)
+    end_time = time.time()
+    print("translate duration:", end_time - start_time, "s")
 
     # 检查响应
     if response.status_code == 200:
         # 返回响应 JSON 数据
         jj = response.json()
-        print("now translate total duration:", jj["total_duration"] / 1000000000, "s")
-        print("now translate total tokens:", str(jj["eval_count"]))
+        if jj["done"] is True:
+            print("now translate total duration:", jj["total_duration"] / 1000000000, "s")
+            print("now translate total tokens:", str(jj["eval_count"]))
         return 0, jj["message"]["content"]
     else:
         print("发送数据失败，状态码：", response.status_code)
@@ -237,7 +245,7 @@ class srt_line:
 
 # 合并多个json为一个json
 def merge_line2json(srt_line_jsons: []):
-    out_jsons = {"lines": []}
+    out_jsons = {"lines": [], "count": len(srt_line_jsons)}
     for one_line in srt_line_jsons:
         out_jsons["lines"].append(one_line.json())
     # dict to json
@@ -288,9 +296,7 @@ def parse_srt_line_jsons(json_str: str):
 if __name__ == '__main__':
 
     encoding = tiktoken.get_encoding("cl100k_base")
-
     # status, translated = translate(err_text)
-
     srt_file_path = r"D:\Subtitle\No Responders Left Behind (2021) WEBRip-1080p_whisperx_2.srt"
     srt_file = open(srt_file_path, encoding='UTF-8')
     subs = list(srt.parse(srt_file.read()))
@@ -313,50 +319,46 @@ if __name__ == '__main__':
     # wait_for_translate_wait_merge_zh = copy.deepcopy(wait_for_translate)
     # 最后的合并结果
     merge_translated = []
-    for i in range(len(wait_for_translate)):
-
-        i = 21
-        print("translate block:" + str(i + 1) + "/" + str(len(wait_for_translate)))
+    cache_index = 0
+    while cache_index < len(wait_for_translate):
+        print("translate block:" + str(cache_index + 1) + "/" + str(len(wait_for_translate)))
         # 从 srt 数据结构构建出 srt_line 对象
-        lines = convert_srt_lines_2_lines(wait_for_translate[i])
+        lines = convert_srt_lines_2_lines(wait_for_translate[cache_index])
         # 将 srt_line 对象转换为 json 字符串
         merged_json = merge_line2json(lines)
         # 翻译
         status, translated = translate(merged_json)
+
         if status == 0:
             # 提取翻译后的信息
-            out_lines = parse_srt_line_jsons(translated)
+            try:
+                out_lines = parse_srt_line_jsons(translated)
+            except:
+                # 提取翻译后的信息失败，重新翻译
+                print("translate failed, parse json error:" + str(cache_index))
+                continue
+
             # 比较原始字幕和翻译后的字幕行数是否一致
-            translated_line_count_is_same = True
-            if len(wait_for_translate[i]) != len(out_lines):
-                translated_line_count_is_same = False
-            # 将翻译后的字幕内容合并原始字幕，输出双语字幕
-            # 当前一段翻译后的字幕，需要合并到 wait_for_translate_wait_merge 中
-            if translated_line_count_is_same is True:
+            if len(wait_for_translate[cache_index]) != len(out_lines):
+                # 长度不一致，重新翻译
+                print("translate failed, length not equal:" + str(cache_index))
+                continue
+            else:
+                # 将翻译后的字幕内容合并原始字幕，输出双语字幕
+                # 当前一段翻译后的字幕，需要合并到 wait_for_translate_wait_merge 中
                 for j in range(len(out_lines)):
                     # 合并字幕内容
                     merged_content = (out_lines[j].content + "\n"
-                                      + wait_for_translate_wait_merge_zh_org[i][j].content)
+                                      + wait_for_translate_wait_merge_zh_org[cache_index][j].content)
                     # 替换原始字幕内容
-                    wait_for_translate_wait_merge_zh_org[i][j].content = merged_content
-            else:
-                # 那么将通过原始字幕每一句话的开始时间和翻译后字幕的开始时间来匹配
-                # 从原始字幕中找到开始时间相同的字幕，然后将翻译后的字幕内容合并到原始字幕中
-                for j in range(len(out_lines)):
-                    for k in range(len(wait_for_translate_wait_merge_zh_org[i])):
-                        if str2time_delta(out_lines[j].start) == wait_for_translate_wait_merge_zh_org[i][k].start:
-                            # 合并字幕内容
-                            merged_content = (out_lines[j].content + "\n"
-                                              + wait_for_translate_wait_merge_zh_org[i][k].content)
-                            # 替换原始字幕内容
-                            wait_for_translate_wait_merge_zh_org[i][k].content = merged_content
-                            wait_for_translate_wait_merge_zh_org[i][k].matched = True
-                            break
+                    wait_for_translate_wait_merge_zh_org[cache_index][j].content = merged_content
 
             print("------------")
         else:
-            print("translate failed, post url error:" + str(i))
+            print("translate failed, post url error:" + str(cache_index))
             exit(1)
+        # 递增索引
+        cache_index += 1
 
     # 将 wait_for_translate_wait_merge_zh_org 加入到 merge_translated
     for i in range(len(wait_for_translate_wait_merge_zh_org)):

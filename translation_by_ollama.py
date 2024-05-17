@@ -220,7 +220,7 @@ def make_ass_one_line(start_delta, end_delta, zh_str, org_str):
     # ass 一句对白的开始，结束时间格式示例 0:00:00.20,0:00:02.66
     out_line = (ass_Dialogue_0 + time_delta2AssTimeStr(start_delta) + "," + time_delta2AssTimeStr(end_delta) +
                 ass_Dialogue_1 + zh_str + ass_Dialogue_2 + org_str)
-    return out_line + "\r\n"
+    return out_line + "\n"
 
 
 # 制作 ass 字幕

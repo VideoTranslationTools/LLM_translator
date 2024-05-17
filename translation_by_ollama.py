@@ -1,172 +1,83 @@
 import copy
 import json
-
+import os
+from typing import List
 import tiktoken
 import srt
 
 import datetime
 
-max_token_input = 350
-num_predict = 2048
-temperature = 0.1
+from loguru import logger
+import argparse
+# 参数解析
+parser = argparse.ArgumentParser()
+# 最大的 token 输入
+parser.add_argument("--max_token_input", default=350, type=int)
+# 预测的 token 数量
+parser.add_argument("--num_predict", default=2048, type=int)
+# 温度
+parser.add_argument("--temperature", default=0.1, type=float)
+# 随机种子
+parser.add_argument("--seed", default=42, type=int)
+# ollama 翻译的自定义模型
+parser.add_argument("--model", default="translate_srt:latest", type=str)
+# ollama server http api url
+parser.add_argument("--ollama_url", default="http://localhost:11434/api/chat", type=str)
+# srt 文件传入的绝对路径
+parser.add_argument("--srt_file_path", default="", type=str)
+# 翻译后的 srt 文件输出的目录
+parser.add_argument("--output_dir", default=".", type=str)
+# 解析参数
+args = parser.parse_args()
 
-# model = "starling-lm:alpha"
-# model = "starling-lm:latest"
-# model = "gemma:7b"
-# model = "llama2-chinese:13b"
-# model = "llama2:13b"
-# model = "qwen:7b"
-# model = "translate_srt_gemma:latest"
-model = "translate_srt:latest"
-# model = "translate_srt_llama3:latest"
-# model = "translate_srt_commandr:latest"
-# model = "translate_srt_llama2-chinese"
 
-system_content = '''你是一位精通视频字幕翻译的专业人员，请你帮我将字幕文件srt格式的文本内容段落翻译成简体中文。
-你需要结合对话上下文来翻译，考虑到字幕对话中有口语化的描述，合理翻译到简体中文，保持原有格式，不要遗漏任何信息，保证每一句对话都是完整输出的。
-给你多少个对话，你就要输出多少个对话，要按每个对话一个段落的方式输出翻译后的内容，不要将多个对话合并到一个段落中。如果给你的对话的语言是英文，那么这个对话的
-只需要输出翻译后的内容，不要附加额外的内容。你可以在脑子里预输出翻译后的内容，然后你检查一下是否满足 srt 字幕输出的格式，不满足你就要重新整理好，满足后再输出内容'''  # 现在请按照上面的要求从第一行开始翻译以下内容为简体中文：
+# ass 字幕内容的头
+ass_00 = r"""
+[Script Info]
+ScaledBorderAndShadow: no
+ScriptType: v4.00+
+Title: Make by Github.com VideoTranslationTools
+WrapStyle: 0
+YCbCr Matrix: TV.709
 
-user_content = '''1
-00:00:01,001 --> 00:00:02,001
-hello world
-2
-00:00:03,003 --> 00:00:04,004
-Sergeant James Betzo, NYPD.'''  # 这里是示例问题
-assistant_content = '''1
-00:00:01,001 --> 00:00:02,001
-hello world
-你好世界
-2
-00:00:03,003 --> 00:00:04,004
-Sergeant James Betzo, NYPD.
-纽约市警察局（NYPD）警长詹姆斯·贝特索（James Betzo）。'''  # 这里是示例答案
+[Custom Info]
+OriginalTextStyle: 原文
+TranslationTextStyle: 译文
 
-err_text = '''198
-00:12:32,205 --> 00:12:34,946
-Dude, his diet is steroids and Johnny Walker blocks.
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: NT,微软雅黑,20,&H00DEDEDE,&HF0000000,&H00111211,&H00000000,0,0,0,0,100,100,0,0,1,2,0.3,2,1,1,1,1
+Style: 译文,微软雅黑,20,&H00DEDEDE,&HF0000000,&H00111211,&H00000000,0,0,0,0,100,100,0,0,1,2,0.3,2,1,1,1,1
+Style: 原文,Arial Black,14,&H0062A8EB,&HF0000000,&H00111211,&H00000000,0,0,0,0,100,100,0,0,1,2,0.3,2,1,1,1,1
+Style: 注释,方正艺黑_GBK,16,&H00DEDEDE,&H000000FF,&H00996150,&H00000000,0,0,0,0,100,100,0,0,1,2,0.5,8,3,3,1,1
 
-199
-00:12:34,946 --> 00:12:35,726
-There you go.
-
-200
-00:12:35,726 --> 00:12:36,327
-Two fingers every day.
-
-201
-00:12:36,327 --> 00:12:37,147
-Two fingers.
-
-202
-00:12:37,147 --> 00:12:37,987
-Please.
-
-203
-00:12:37,987 --> 00:12:38,607
-You should have four.
-
-204
-00:12:38,607 --> 00:12:40,768
-You earned four, for God's sake.
-
-205
-00:12:40,768 --> 00:12:43,609
-I'm the luckiest.
-
-206
-00:12:43,609 --> 00:12:44,409
-I say it all the time.
-
-207
-00:12:44,409 --> 00:12:45,469
-I'm the luckiest guy out there.
-
-208
-00:12:45,469 --> 00:12:47,150
-I really am, you know?
-
-209
-00:12:47,150 --> 00:12:48,190
-This is gonna be some day, though.
-
-210
-00:12:48,190 --> 00:12:49,010
-This is nice.
-
-211
-00:12:49,010 --> 00:12:50,391
-Yeah.
-
-212
-00:12:50,391 --> 00:12:55,372
-Sergeant James Betzo, NYPD.
-
-213
-00:12:55,372 --> 00:12:58,373
-Joseph T. Callahan, FDNY.
-
-214
-00:13:03,453 --> 00:13:08,034
-Keith M. Laughlin, FDNY.
-
-215
-00:13:08,034 --> 00:13:16,236
-Charles S. Zou, FDNY.
-
-216
-00:13:16,236 --> 00:13:18,676
-This event was over the top.
-
-217
-00:13:18,676 --> 00:13:24,337
-I've been to several, but like I said, any time you get to tell a story, it's a good day.
-
-218
-00:13:24,337 --> 00:13:31,979
-Anybody who wants to get a selfie or a Jon Stewart autograph, please wait until the media finishes.
-
-219
-00:13:33,925 --> 00:13:40,450
-Anybody who wants to have their park or lawn designed and manicured by John Feel also come up.
-'''
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+# 一个对白的拼接部分
+ass_Dialogue_0 = r"Dialogue 0,"
+ass_Dialogue_1 = r",译文,,0,0,0,,"
+ass_Dialogue_2 = r"\N{\r原文}"
 
 
 def translate(content: str):
     import requests
-    # API 端点
-    # url = "http://192.168.8.135:11434/api/generate"
-    url = "http://localhost:11434/api/chat"
-    # url = "http://localhost:11434/api/generate"
-    # url = "http://192.168.8.135:11434/api/chat"
     # 要发送的 JSON 数据
     data = {
-        "model": model,
+        "model": args.model,
         "stream": False,
         # "prompt": content,
         "format": "json",
         "messages": [
-            # {
-            #     "role": "system",
-            #     "content": system_content
-            # },
-            # {
-            #     "role": "user",
-            #     "content": user_content
-            # },
-            # {
-            #     "role": "assistant",
-            #     "content": assistant_content
-            # },
             {
                 "role": "user",
                 "content": content
             }
         ],
         "options": {
-            "seed": 42,
+            "seed": args.seed,
             # "num_predict": num_predict,
-            "temperature": temperature
+            "temperature": args.temperature
         }
     }
 
@@ -174,20 +85,17 @@ def translate(content: str):
     import time
     start_time = time.time()
     # 发送 POST 请求
-    response = requests.post(url, json=data)
+    response = requests.post(args.ollama_url, json=data)
     end_time = time.time()
-    print("translate duration:", end_time - start_time, "s")
+    logger.info("translate duration: {cost_time}s", cost_time=end_time - start_time)
 
     # 检查响应
     if response.status_code == 200:
         # 返回响应 JSON 数据
         jj = response.json()
-        if jj["done"] is True:
-            print("now translate total duration:", jj["total_duration"] / 1000000000, "s")
-            print("now translate total tokens:", str(jj["eval_count"]))
         return 0, jj["message"]["content"]
     else:
-        print("发送数据失败，状态码：", response.status_code)
+        logger.error("发送数据失败，状态码：{status_code}", status_code=response.status_code)
         return -1, ""
 
 
@@ -202,6 +110,20 @@ def time_delta2str(delta):
     milliseconds = int(delta.microseconds / 1000)
     # 格式化输出
     formatted_time = f"{hours:02d}:{minutes:02d}:{seconds:02d},{milliseconds:03d}"
+    return formatted_time
+
+
+# 将 delta 时间，转换到 ass 字幕的时间格式:0:00:00.20
+def time_delta2AssTimeStr(delta):
+    # 获取总秒数
+    total_seconds = delta.total_seconds()
+    # 将总秒数转换为时、分、秒和毫秒
+    hours = int(total_seconds // 3600)
+    minutes = int((total_seconds % 3600) // 60)
+    seconds = int(total_seconds % 60)
+    milliseconds = int(delta.microseconds / 100)
+    # 格式化输出
+    formatted_time = f"{hours:02d}:{minutes:02d}:{seconds:02d},{milliseconds:02d}"
     return formatted_time
 
 
@@ -293,35 +215,71 @@ def parse_srt_line_jsons(json_str: str):
     return out_lines
 
 
+# 制作 ass 一句对话
+def make_ass_one_line(start_delta, end_delta, zh_str, org_str):
+    # ass 一句对白的开始，结束时间格式示例 0:00:00.20,0:00:02.66
+    out_line = (ass_Dialogue_0 + time_delta2AssTimeStr(start_delta) + "," + time_delta2AssTimeStr(end_delta) +
+                ass_Dialogue_1 + zh_str + ass_Dialogue_2 + org_str)
+    return out_line + "\r\n"
+
+
+# 制作 ass 字幕
+def make_ass_file(merge_zh: List[srt.Subtitle], merge_org: List[srt.Subtitle]):
+
+    full_ass_content = ass_00
+    for index in range(len(merge_zh)):
+        one_line = make_ass_one_line(merge_zh[index].start, merge_zh[index].end,
+                                     merge_zh[index].content,
+                                     merge_org[index].content)
+        full_ass_content += one_line
+    return full_ass_content
+
+
 if __name__ == '__main__':
 
     encoding = tiktoken.get_encoding("cl100k_base")
-    # status, translated = translate(err_text)
-    srt_file_path = r"D:\Subtitle\No Responders Left Behind (2021) WEBRip-1080p_whisperx_2.srt"
+    # srt 文件是否存在
+    srt_file_path = args.srt_file_path
+    if not srt_file_path:
+        logger.error("srt file path is empty")
+        exit(1)
+    if not os.path.exists(srt_file_path):
+        logger.error("srt file not exist")
+        exit(1)
     srt_file = open(srt_file_path, encoding='UTF-8')
     subs = list(srt.parse(srt_file.read()))
-    print("sub lines:" + str(len(subs)))
+
+    logger.info("subtitle lines: {lines}", lines=str(len(subs)))
+
     tmp_one_block = []
     wait_for_translate = []
     for i in range(len(subs)):
         tmp_one_block.append(subs[i])
         one_block_text = srt.compose(tmp_one_block)
         tmp_one_block_len = len(encoding.encode(one_block_text))
-        if tmp_one_block_len > max_token_input:
+        if tmp_one_block_len > args.max_token_input:
             wait_for_translate.append(tmp_one_block)
             tmp_one_block = []
     if len(tmp_one_block) > 0:
         wait_for_translate.append(tmp_one_block)
 
-    print("will translate blocks:" + str(len(wait_for_translate)))
+    logger.info("will translate blocks: {blocks}", blocks=str(len(wait_for_translate)))
     # 深拷贝一份待翻译的数组
     wait_for_translate_wait_merge_zh_org = copy.deepcopy(wait_for_translate)
-    # wait_for_translate_wait_merge_zh = copy.deepcopy(wait_for_translate)
+    # 翻译后的译文数组（这里深拷贝就是为了赋值占位）
+    wait_for_translate_wait_merge_zh = copy.deepcopy(wait_for_translate)
+    # 翻译前的原文数组（这里深拷贝就是为了赋值占位）
+    wait_for_translate_wait_merge_org = copy.deepcopy(wait_for_translate)
     # 最后的合并结果
-    merge_translated = []
+    merge_translated_srt = []
+    merge_translated_srt_zh = []
+    merge_translated_srt_org = []
     cache_index = 0
     while cache_index < len(wait_for_translate):
-        print("translate block:" + str(cache_index + 1) + "/" + str(len(wait_for_translate)))
+
+        logger.info("translate block: {now_index} / {all_index}",
+                    now_index=str(cache_index + 1), all_index=str(len(wait_for_translate)))
+
         # 从 srt 数据结构构建出 srt_line 对象
         lines = convert_srt_lines_2_lines(wait_for_translate[cache_index])
         # 将 srt_line 对象转换为 json 字符串
@@ -335,13 +293,13 @@ if __name__ == '__main__':
                 out_lines = parse_srt_line_jsons(translated)
             except:
                 # 提取翻译后的信息失败，重新翻译
-                print("translate failed, parse json error:" + str(cache_index))
+                logger.error("translate failed, parse json error: " + str(cache_index) + ", will retry")
                 continue
 
             # 比较原始字幕和翻译后的字幕行数是否一致
             if len(wait_for_translate[cache_index]) != len(out_lines):
                 # 长度不一致，重新翻译
-                print("translate failed, length not equal:" + str(cache_index))
+                logger.error("translate failed, length not equal: " + str(cache_index) + ", will retry")
                 continue
             else:
                 # 将翻译后的字幕内容合并原始字幕，输出双语字幕
@@ -352,18 +310,36 @@ if __name__ == '__main__':
                                       + wait_for_translate_wait_merge_zh_org[cache_index][j].content)
                     # 替换原始字幕内容
                     wait_for_translate_wait_merge_zh_org[cache_index][j].content = merged_content
+                    # 替换原始字幕内容
+                    wait_for_translate_wait_merge_zh[cache_index][j].content = out_lines[j].content
 
-            print("------------")
+            logger.info("------------")
         else:
-            print("translate failed, post url error:" + str(cache_index))
+            logger.error("translate failed, post url error: " + str(cache_index))
             exit(1)
         # 递增索引
         cache_index += 1
 
     # 将 wait_for_translate_wait_merge_zh_org 加入到 merge_translated
     for i in range(len(wait_for_translate_wait_merge_zh_org)):
-        merge_translated.extend(wait_for_translate_wait_merge_zh_org[i])
-    # 写出翻译好的字幕
-    with open("translated.srt", "w", encoding='UTF-8') as f:
-        f.write(srt.compose(merge_translated))
-    print("done")
+        merge_translated_srt.extend(wait_for_translate_wait_merge_zh_org[i])
+    for i in range(len(wait_for_translate_wait_merge_zh)):
+        merge_translated_srt_zh.extend(wait_for_translate_wait_merge_zh[i])
+    for i in range(len(wait_for_translate_wait_merge_org)):
+        merge_translated_srt_org.extend(wait_for_translate_wait_merge_org[i])
+
+    # 如果输出目录不存在，创建目录
+    if not os.path.exists(args.output_dir):
+        os.makedirs(args.output_dir)
+    # 保存翻译后的 srt 字幕
+    with open(os.path.join(args.output_dir, "translated.srt"), "w", encoding='UTF-8') as f:
+        f.write(srt.compose(merge_translated_srt))
+    logger.info("translated srt saved to: {path}", path=os.path.join(args.output_dir, "translated.srt"))
+
+    # 保存翻译后的 ass 字幕
+    ass_full_content = make_ass_file(merge_translated_srt_zh, merge_translated_srt_org)
+    with open(os.path.join(args.output_dir, "translated.ass"), "w", encoding='UTF-8') as f:
+        f.write(ass_full_content)
+    logger.info("translated srt saved to: {path}", path=os.path.join(args.output_dir, "translated.ass"))
+
+    logger.info("done")

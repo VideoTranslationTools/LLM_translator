@@ -20,7 +20,7 @@ parser.add_argument("--temperature", default=0.1, type=float)
 # 随机种子
 parser.add_argument("--seed", default=42, type=int)
 # ollama 翻译的自定义模型
-parser.add_argument("--model", default="translate_srt:latest", type=str)
+parser.add_argument("--model", default="allanpk716/translate_srt:latest", type=str)
 # ollama server http api url
 parser.add_argument("--ollama_url", default="http://localhost:11434/api/chat", type=str)
 # srt 文件传入的绝对路径

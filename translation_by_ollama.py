@@ -9,6 +9,7 @@ import datetime
 
 from loguru import logger
 import argparse
+
 # 参数解析
 parser = argparse.ArgumentParser()
 # 最大的 token 输入
@@ -29,7 +30,6 @@ parser.add_argument("--srt_file_path", default="", type=str)
 parser.add_argument("--output_dir", default=".", type=str)
 # 解析参数
 args = parser.parse_args()
-
 
 # ass 字幕内容的头
 ass_00 = r"""
@@ -175,11 +175,19 @@ def merge_line2json(srt_line_jsons: []):
     return json_str
 
 
+def replace_special_char(content: str):
+    content = content.replace("\n", "")
+    content = content.replace("\r", "")
+    content = content.replace("<i>", "")
+    content = content.replace("</i>", "")
+    return content
+
+
 def convert_srt_lines_2_lines(str_blocks: []):
     out_jsons = []
     for one_line in str_blocks:
         index = one_line.index
-        content = one_line.content
+        content = replace_special_char(one_line.content)
         start = one_line.start
         end = one_line.end
         one_line_json = srt_line(index, content, start, end)
@@ -225,7 +233,6 @@ def make_ass_one_line(start_delta, end_delta, zh_str, org_str):
 
 # 制作 ass 字幕
 def make_ass_file(merge_zh: List[srt.Subtitle], merge_org: List[srt.Subtitle]):
-
     full_ass_content = ass_00
     for index in range(len(merge_zh)):
         one_line = make_ass_one_line(merge_zh[index].start, merge_zh[index].end,
@@ -307,11 +314,13 @@ if __name__ == '__main__':
                 for j in range(len(out_lines)):
                     # 合并字幕内容
                     merged_content = (out_lines[j].content + "\n"
-                                      + wait_for_translate_wait_merge_zh_org[cache_index][j].content)
+                                      + replace_special_char(wait_for_translate_wait_merge_zh_org[cache_index][j].content))
                     # 替换原始字幕内容
                     wait_for_translate_wait_merge_zh_org[cache_index][j].content = merged_content
                     # 替换原始字幕内容
                     wait_for_translate_wait_merge_zh[cache_index][j].content = out_lines[j].content
+                    wait_for_translate_wait_merge_org[cache_index][j].content = (
+                        replace_special_char(wait_for_translate_wait_merge_org[cache_index][j].content))
 
             logger.info("------------")
         else:

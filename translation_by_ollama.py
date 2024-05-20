@@ -99,6 +99,27 @@ def translate(content: str):
         return -1, ""
 
 
+def free_model_ram():
+    import requests
+    # 要发送的 JSON 数据
+    data = {
+        "model": args.model,
+        "keep_alive": 0
+    }
+
+    # 发送 POST 请求
+    response = requests.post(args.ollama_url, json=data)
+    # 检查响应
+    if response.status_code == 200:
+        # 返回响应 JSON 数据
+        jj = response.json()
+        logger.info("free model ram: {message}", message=jj["message"]["content"])
+        return 0
+    else:
+        logger.error("发送数据失败，状态码：{status_code}", status_code=response.status_code)
+        return -1
+
+
 # 转换到 00:15:23,222
 def time_delta2str(delta):
     # 获取总秒数
@@ -350,5 +371,10 @@ if __name__ == '__main__':
     with open(os.path.join(args.output_dir, "translated.ass"), "w", encoding='UTF-8') as f:
         f.write(ass_full_content)
     logger.info("translated srt saved to: {path}", path=os.path.join(args.output_dir, "translated.ass"))
+
+    logger.info("free model")
+
+    if free_model_ram() != 0:
+        logger.error("free model ram error")
 
     logger.info("done")

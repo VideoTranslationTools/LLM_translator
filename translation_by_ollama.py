@@ -4,7 +4,7 @@ import os
 from typing import List
 import tiktoken
 import srt
-
+from sys import exit
 import datetime
 
 from loguru import logger
@@ -26,6 +26,10 @@ parser.add_argument("--model", default="allanpk716/translate_srt:latest", type=s
 parser.add_argument("--ollama_url", default="http://localhost:11434/api/chat", type=str)
 # srt 文件传入的绝对路径
 parser.add_argument("--srt_file_path", default="", type=str)
+# 翻译后的文件名 Title
+parser.add_argument("--translated_title", default="", type=str)
+# 获取程序版本号
+parser.add_argument("--get_version", default=0, type=int)
 # 翻译后的 srt 文件输出的目录
 parser.add_argument("--output_dir", default=".", type=str)
 # 解析参数
@@ -263,7 +267,13 @@ def make_ass_file(merge_zh: List[srt.Subtitle], merge_org: List[srt.Subtitle]):
     return full_ass_content
 
 
+version = "v0.0.1"
+
 if __name__ == '__main__':
+
+    if args.get_version != 0:
+        print(version)
+        exit(0)
 
     encoding = tiktoken.get_encoding("cl100k_base")
     # srt 文件是否存在
@@ -271,7 +281,9 @@ if __name__ == '__main__':
     if not srt_file_path:
         logger.error("srt file path is empty")
         exit(1)
+
     if not os.path.exists(srt_file_path):
+        logger.info("srt file:{srt_file_path}", srt_file_path=srt_file_path)
         logger.error("srt file not exist")
         exit(1)
     srt_file = open(srt_file_path, encoding='UTF-8')
@@ -335,7 +347,8 @@ if __name__ == '__main__':
                 for j in range(len(out_lines)):
                     # 合并字幕内容
                     merged_content = (out_lines[j].content + "\n"
-                                      + replace_special_char(wait_for_translate_wait_merge_zh_org[cache_index][j].content))
+                                      + replace_special_char(
+                                wait_for_translate_wait_merge_zh_org[cache_index][j].content))
                     # 替换原始字幕内容
                     wait_for_translate_wait_merge_zh_org[cache_index][j].content = merged_content
                     # 替换原始字幕内容
@@ -362,15 +375,15 @@ if __name__ == '__main__':
     if not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir)
     # 保存翻译后的 srt 字幕
-    with open(os.path.join(args.output_dir, "translated.srt"), "w", encoding='UTF-8') as f:
+    with open(os.path.join(args.output_dir, args.translated_title + ".srt"), "w", encoding='UTF-8') as f:
         f.write(srt.compose(merge_translated_srt))
-    logger.info("translated srt saved to: {path}", path=os.path.join(args.output_dir, "translated.srt"))
+    logger.info("translated srt saved to: {path}", path=os.path.join(args.output_dir, args.translated_title + ".srt"))
 
     # 保存翻译后的 ass 字幕
     ass_full_content = make_ass_file(merge_translated_srt_zh, merge_translated_srt_org)
-    with open(os.path.join(args.output_dir, "translated.ass"), "w", encoding='UTF-8') as f:
+    with open(os.path.join(args.output_dir, args.translated_title + ".ass"), "w", encoding='UTF-8') as f:
         f.write(ass_full_content)
-    logger.info("translated srt saved to: {path}", path=os.path.join(args.output_dir, "translated.ass"))
+    logger.info("translated srt saved to: {path}", path=os.path.join(args.output_dir, args.translated_title + ".ass"))
 
     logger.info("free model")
 

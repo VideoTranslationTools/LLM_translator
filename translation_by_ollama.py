@@ -6,7 +6,7 @@ import tiktoken
 import srt
 from sys import exit
 import datetime
-
+import base64
 from loguru import logger
 import argparse
 
@@ -267,7 +267,18 @@ def make_ass_file(merge_zh: List[srt.Subtitle], merge_org: List[srt.Subtitle]):
     return full_ass_content
 
 
-version = "v0.0.1"
+# 判断传入的字符串是否是 base64 加密的
+def is_base64(s):
+    try:
+        # 尝试解码字符串
+        decoded = base64.b64decode(s)
+        # 确保解码后的内容和原字符串内容相同
+        return base64.b64encode(decoded) == s.encode()
+    except Exception:
+        return False
+
+
+version = "v0.0.2"
 
 if __name__ == '__main__':
 
@@ -281,6 +292,10 @@ if __name__ == '__main__':
     if not srt_file_path:
         logger.error("srt file path is empty")
         exit(1)
+
+    if is_base64(srt_file_path) is True:
+        # 确认是就解密
+        srt_file_path = base64.b64decode(srt_file_path)
 
     if not os.path.exists(srt_file_path):
         logger.info("srt file:{srt_file_path}", srt_file_path=srt_file_path)

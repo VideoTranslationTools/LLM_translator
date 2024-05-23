@@ -59,7 +59,7 @@ Style: 注释,方正艺黑_GBK,16,&H00DEDEDE,&H000000FF,&H00996150,&H00000000,0,
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
 # 一个对白的拼接部分
-ass_Dialogue_0 = r"Dialogue 0,"
+ass_Dialogue_0 = r"Dialogue: 0,"
 ass_Dialogue_1 = r",译文,,0,0,0,,"
 ass_Dialogue_2 = r"\N{\r原文}"
 
@@ -147,8 +147,8 @@ def time_delta2AssTimeStr(delta):
     minutes = int((total_seconds % 3600) // 60)
     seconds = int(total_seconds % 60)
     milliseconds = int(delta.microseconds / 100)
-    # 格式化输出
-    formatted_time = f"{hours:02d}:{minutes:02d}:{seconds:02d},{milliseconds:02d}"
+    # 格式化输出 0:00:00.20
+    formatted_time = f"{hours:02d}:{minutes:02d}:{seconds:02d}.{int(milliseconds/100):02d}"
     return formatted_time
 
 
@@ -267,21 +267,10 @@ def make_ass_file(merge_zh: List[srt.Subtitle], merge_org: List[srt.Subtitle]):
     return full_ass_content
 
 
-# 判断传入的字符串是否是 base64 加密的
-def is_base64(s):
-    try:
-        # 尝试解码字符串
-        decoded = base64.b64decode(s)
-        # 确保解码后的内容和原字符串内容相同
-        return base64.b64encode(decoded) == s.encode()
-    except Exception:
-        return False
-
-
-version = "v0.0.2"
+version = "v0.0.7"
 
 if __name__ == '__main__':
-
+    need_decode_by_b64 = False
     if args.get_version != 0:
         print(version)
         exit(0)
@@ -293,14 +282,29 @@ if __name__ == '__main__':
         logger.error("srt file path is empty")
         exit(1)
 
-    if is_base64(srt_file_path) is True:
-        # 确认是就解密
-        srt_file_path = base64.b64decode(srt_file_path)
-
     if not os.path.exists(srt_file_path):
-        logger.info("srt file:{srt_file_path}", srt_file_path=srt_file_path)
-        logger.error("srt file not exist")
-        exit(1)
+        # 尝试 base64 解密
+        srt_file_path = base64.b64decode(srt_file_path)
+        srt_file_path = bytes.decode(srt_file_path)
+        if not os.path.exists(srt_file_path):
+            logger.info("srt file:{srt_file_path}", srt_file_path=srt_file_path)
+            logger.error("srt file not exist")
+            exit(1)
+        # 因为如果这个地址需要转换，那么output_dir、translated_title都需要从 base64 解密
+        need_decode_by_b64 = True
+    logger.info("srt file path:{srt_file_path}", srt_file_path=srt_file_path)
+    # 判断是否需要转换
+    output_dir = args.output_dir
+    translated_title = args.translated_title
+    if need_decode_by_b64 is True:
+        output_dir = base64.b64decode(output_dir)
+        translated_title = base64.b64decode(translated_title)
+        output_dir = bytes.decode(output_dir)
+        translated_title = bytes.decode(translated_title)
+        logger.info("decode by base64")
+    logger.info("output_dir:{output_dir}", output_dir=output_dir)
+    logger.info("translated_title:{translated_title}", translated_title=translated_title)
+    # 打开读取文件
     srt_file = open(srt_file_path, encoding='UTF-8')
     subs = list(srt.parse(srt_file.read()))
 
@@ -387,18 +391,18 @@ if __name__ == '__main__':
         merge_translated_srt_org.extend(wait_for_translate_wait_merge_org[i])
 
     # 如果输出目录不存在，创建目录
-    if not os.path.exists(args.output_dir):
-        os.makedirs(args.output_dir)
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
     # 保存翻译后的 srt 字幕
-    with open(os.path.join(args.output_dir, args.translated_title + ".srt"), "w", encoding='UTF-8') as f:
+    with open(os.path.join(output_dir, translated_title + ".srt"), "w", encoding='UTF-8') as f:
         f.write(srt.compose(merge_translated_srt))
-    logger.info("translated srt saved to: {path}", path=os.path.join(args.output_dir, args.translated_title + ".srt"))
+    logger.info("translated srt saved to: {path}", path=os.path.join(output_dir, translated_title + ".srt"))
 
     # 保存翻译后的 ass 字幕
     ass_full_content = make_ass_file(merge_translated_srt_zh, merge_translated_srt_org)
-    with open(os.path.join(args.output_dir, args.translated_title + ".ass"), "w", encoding='UTF-8') as f:
+    with open(os.path.join(output_dir, translated_title + ".ass"), "w", encoding='UTF-8') as f:
         f.write(ass_full_content)
-    logger.info("translated srt saved to: {path}", path=os.path.join(args.output_dir, args.translated_title + ".ass"))
+    logger.info("translated srt saved to: {path}", path=os.path.join(output_dir, translated_title + ".ass"))
 
     logger.info("free model")
 

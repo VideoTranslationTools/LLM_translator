@@ -64,7 +64,7 @@ ass_Dialogue_1 = r",译文,,0,0,0,,"
 ass_Dialogue_2 = r"\N{\r原文}"
 
 
-def translate(content: str):
+def translate(content: str, seed: int , temperature: float):
     import requests
     # 要发送的 JSON 数据
     data = {
@@ -79,9 +79,9 @@ def translate(content: str):
             }
         ],
         "options": {
-            "seed": args.seed,
+            "seed": seed,
             # "num_predict": num_predict,
-            "temperature": args.temperature
+            "temperature": temperature
         }
     }
 
@@ -267,7 +267,7 @@ def make_ass_file(merge_zh: List[srt.Subtitle], merge_org: List[srt.Subtitle]):
     return full_ass_content
 
 
-version = "v0.0.7"
+version = "v0.0.8"
 
 if __name__ == '__main__':
     need_decode_by_b64 = False
@@ -334,6 +334,7 @@ if __name__ == '__main__':
     merge_translated_srt_zh = []
     merge_translated_srt_org = []
     cache_index = 0
+    translate_line_len_match = True
     while cache_index < len(wait_for_translate):
 
         logger.info("translate block: {now_index} / {all_index}",
@@ -344,7 +345,17 @@ if __name__ == '__main__':
         # 将 srt_line 对象转换为 json 字符串
         merged_json = merge_line2json(lines)
         # 翻译
-        status, translated = translate(merged_json)
+        # 这里需要考虑一点，如果翻译的长度不对，那么就应该挑战 seed 和 temperature
+        now_seed = args.seed
+        now_temperature = args.temperature
+        if translate_line_len_match is False:
+            now_seed = now_seed + 1
+            now_temperature = now_temperature + 0.1
+            if now_temperature > 1.0:
+                now_temperature = 0.1
+            logger.info("retry translate, seed: {seed}, temperature: {temperature}",
+                        seed=str(now_seed), temperature=str(now_temperature))
+        status, translated = translate(merged_json, now_seed, now_temperature)
 
         if status == 0:
             # 提取翻译后的信息
@@ -358,9 +369,11 @@ if __name__ == '__main__':
             # 比较原始字幕和翻译后的字幕行数是否一致
             if len(wait_for_translate[cache_index]) != len(out_lines):
                 # 长度不一致，重新翻译
+                translate_line_len_match = False
                 logger.error("translate failed, length not equal: " + str(cache_index) + ", will retry")
                 continue
             else:
+                translate_line_len_match = True
                 # 将翻译后的字幕内容合并原始字幕，输出双语字幕
                 # 当前一段翻译后的字幕，需要合并到 wait_for_translate_wait_merge 中
                 for j in range(len(out_lines)):

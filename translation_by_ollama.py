@@ -335,6 +335,10 @@ if __name__ == '__main__':
     merge_translated_srt_org = []
     cache_index = 0
     translate_line_len_match = True
+
+    now_seed = args.seed
+    now_temperature = args.temperature
+
     while cache_index < len(wait_for_translate):
 
         logger.info("translate block: {now_index} / {all_index}",
@@ -346,8 +350,6 @@ if __name__ == '__main__':
         merged_json = merge_line2json(lines)
         # 翻译
         # 这里需要考虑一点，如果翻译的长度不对，那么就应该挑战 seed 和 temperature
-        now_seed = args.seed
-        now_temperature = args.temperature
         if translate_line_len_match is False:
             now_seed = now_seed + 1
             now_temperature = now_temperature + 0.1
@@ -355,6 +357,10 @@ if __name__ == '__main__':
                 now_temperature = 0.1
             logger.info("retry translate, seed: {seed}, temperature: {temperature}",
                         seed=str(now_seed), temperature=str(now_temperature))
+        else:
+            now_seed = args.seed
+            now_temperature = args.temperature
+
         status, translated = translate(merged_json, now_seed, now_temperature)
 
         if status == 0:

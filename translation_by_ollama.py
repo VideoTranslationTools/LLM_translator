@@ -201,10 +201,12 @@ def merge_line2json(srt_line_jsons: []):
 
 
 def replace_special_char(content: str):
+    import re
     content = content.replace("\n", "")
     content = content.replace("\r", "")
     content = content.replace("<i>", "")
     content = content.replace("</i>", "")
+    content = re.sub(r'\{[^{}]*\}', '', content)
     return content
 
 

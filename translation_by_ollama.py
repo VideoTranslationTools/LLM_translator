@@ -269,7 +269,7 @@ def make_ass_file(merge_zh: List[srt.Subtitle], merge_org: List[srt.Subtitle]):
     return full_ass_content
 
 
-version = "v0.0.8"
+version = "v0.0.9"
 
 if __name__ == '__main__':
     need_decode_by_b64 = False

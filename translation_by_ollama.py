@@ -269,7 +269,7 @@ def make_ass_file(merge_zh: List[srt.Subtitle], merge_org: List[srt.Subtitle]):
     return full_ass_content
 
 
-version = "v0.0.9"
+version = "v0.0.10"
 
 if __name__ == '__main__':
     need_decode_by_b64 = False
@@ -353,7 +353,9 @@ if __name__ == '__main__':
         # 翻译
         # 这里需要考虑一点，如果翻译的长度不对，那么就应该挑战 seed 和 temperature
         if translate_line_len_match is False:
-            now_seed = now_seed + 1
+            import random
+            tmp_seed = random.randint(1000, 9999)
+            now_seed = tmp_seed
             now_temperature = now_temperature + 0.1
             if now_temperature > 1.0:
                 now_temperature = 0.1
